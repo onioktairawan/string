@@ -19,7 +19,7 @@ db = client_mongo["sessions"]
 collection = db["strings"]
 
 # Create the Pyrogram Client instance for bot
-bot_app = Client("bot", bot_token=bot_token)
+bot_app = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # Dictionary to track user state
 user_state = {}
