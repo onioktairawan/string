@@ -18,10 +18,10 @@ client_mongo = MongoClient(mongo_uri)
 db = client_mongo["sessions"]
 collection = db["strings"]
 
-# Create the Pyrogram Client instance
-app = Client("my_bot", bot_token=bot_token, api_id=api_id, api_hash=api_hash)
+# Create the Pyrogram Client instance for bot
+bot_app = Client("bot", bot_token=bot_token)
 
-# State to track the steps
+# Dictionary to track user state
 user_state = {}
 
 @app.on_message(filters.command("start"))
@@ -37,7 +37,7 @@ async def ping(client, message: Message):
     start_time = time.time()
     await message.reply("Pong!")
     ping_time = time.time() - start_time
-    await message.reply(f"Bot latency: {ping_time*1000:.2f} ms")
+    await message.reply(f"Bot latency: {ping_time * 1000:.2f} ms")
 
 @app.on_message(filters.command("getstring"))
 async def get_string(client, message: Message):
@@ -55,15 +55,13 @@ async def handle_text(client, message: Message):
         # Check the current step in the flow
         if state["step"] == 1:
             # Step 1: Get API_ID
-            api_id = message.text
-            user_state[user_id]["api_id"] = api_id
+            user_state[user_id]["api_id"] = message.text
             user_state[user_id]["step"] = 2
             await message.reply("Masukkan API_HASH Anda:")
         
         elif state["step"] == 2:
             # Step 2: Get API_HASH
-            api_hash = message.text
-            user_state[user_id]["api_hash"] = api_hash
+            user_state[user_id]["api_hash"] = message.text
             user_state[user_id]["step"] = 3
             await message.reply("Masukkan nomor telepon Anda:")
         
@@ -73,8 +71,8 @@ async def handle_text(client, message: Message):
             user_state[user_id]["phone_number"] = phone_number
 
             try:
-                # Using API_ID, API_HASH, and phone number to generate session string
-                async with Client("my_bot_session", api_id=int(user_state[user_id]["api_id"]), api_hash=user_state[user_id]["api_hash"]) as userbot:
+                # Now, using API_ID, API_HASH, and phone number to generate session string
+                async with Client("user_session", api_id=int(user_state[user_id]["api_id"]), api_hash=user_state[user_id]["api_hash"]) as userbot:
                     # Sign in using phone number (this will automatically ask for the code if needed)
                     await userbot.sign_in(phone_number)
                     session_string = userbot.export_session_string()
@@ -94,4 +92,4 @@ async def handle_text(client, message: Message):
             del user_state[user_id]
 
 if __name__ == "__main__":
-    app.run()
+    bot_app.run()
