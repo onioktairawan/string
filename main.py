@@ -73,17 +73,18 @@ async def handle_text(client, message: Message):
             user_state[user_id]["phone_number"] = phone_number
 
             try:
-                # Menggunakan API_ID, API_HASH, dan nomor telepon untuk menghasilkan string session
+                # Using API_ID, API_HASH, and phone number to generate session string
                 async with Client("my_bot_session", api_id=int(user_state[user_id]["api_id"]), api_hash=user_state[user_id]["api_hash"]) as userbot:
-                    await userbot.send_message(phone_number, "Testing connection...")
+                    # Sign in using phone number (this will automatically ask for the code if needed)
+                    await userbot.sign_in(phone_number)
                     session_string = userbot.export_session_string()
 
-                    # Simpan string session ke MongoDB
+                    # Save session string to MongoDB
                     collection.insert_one({"session_string": session_string, "user_id": user_id})
 
                     await message.reply(f"String session Anda: `{session_string}`")
 
-                    # Setelah string session dikirim, hapus dari MongoDB
+                    # After sending the session string, delete it from MongoDB
                     collection.delete_one({"session_string": session_string})
 
             except Exception as e:
