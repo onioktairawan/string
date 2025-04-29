@@ -1,94 +1,48 @@
-import os
-import time
-import psutil
-from datetime import timedelta
 from pyrogram import Client, filters
-from dotenv import load_dotenv
-import pymongo
-from pyrogram.errors import PhoneNumberInvalid
+from pyrogram.types import Message
 
-# Memuat variabel dari .env
-load_dotenv()
+app = Client("my_bot", bot_token="7768837888:AAFp9J3EwuaNL_c7MRXAzbFWdI2uYyM1Mhw")
 
-# Ambil informasi dari .env
-bot_token = os.getenv("BOT_TOKEN")
-mongo_uri = os.getenv("MONGO_URI")
-owner_api_id = os.getenv("OWNER_API_ID")
-owner_api_hash = os.getenv("OWNER_API_HASH")
-
-# Setup client Pyrogram untuk bot
-app = Client("my_bot", bot_token=bot_token)
-
-# Setup MongoDB Client (hanya sekali di awal)
-client = pymongo.MongoClient(mongo_uri)
-db = client['telegram_sessions']
-collection = db['sessions']
-
-# Fungsi untuk mendapatkan latensi, uptime, dan penggunaan CPU
-@app.on_message(filters.command("latensi"))
-async def latensi_handler(client, message):
-    start_time = time.time()
-
-    # Menghitung latency (ping)
-    latency = round((time.time() - start_time) * 1000, 2)
-    
-    # Mendapatkan uptime bot dalam format waktu
-    uptime_seconds = time.time() - message.date.timestamp()
-    uptime = str(timedelta(seconds=round(uptime_seconds)))
-    
-    # Mendapatkan CPU usage
-    cpu_usage = psutil.cpu_percent(interval=1)
-
-    # Menampilkan hasil latensi, uptime, dan CPU usage
+@app.on_message(filters.command("start"))
+async def start(client, message: Message):
     await message.reply(
-        f"🏓 Ping: {latency} ms\n"
-        f"⏱️ Uptime: {uptime}\n"
-        f"🖥 CPU: {cpu_usage}%"
+        "Halo! Saya bot yang dapat membantu Anda menghasilkan string session Pyrogram.\n"
+        "Gunakan /ping untuk melihat latensi bot, dan /getstring untuk menghasilkan string session Pyrogram."
     )
 
-# Fungsi untuk menangani perintah /getstring
+@app.on_message(filters.command("ping"))
+async def ping(client, message: Message):
+    import time
+    start_time = time.time()
+    await message.reply("Pong!")
+    ping_time = time.time() - start_time
+    await message.reply(f"Bot latency: {ping_time*1000:.2f} ms")
+
 @app.on_message(filters.command("getstring"))
-async def get_string_handler(client, message):
-    # Memberikan instruksi kepada user
-    await message.reply("📥 Kirim API ID Anda:")
+async def get_string(client, message: Message):
+    await message.reply("Masukkan API_ID Anda:")
 
     @app.on_message(filters.text)
-    async def get_api_id(client, msg):
-        api_id = msg.text
-        await msg.reply("🧩 Kirim API HASH Anda:")
+    async def get_api_id(client, message: Message):
+        api_id = message.text
+        await message.reply("Masukkan API_HASH Anda:")
 
         @app.on_message(filters.text)
-        async def get_api_hash(client, msg):
-            api_hash = msg.text
-            await msg.reply("📱 Kirim Nomor Telepon Anda (format internasional, contoh: +628xxxxxxxxx):")
-            
+        async def get_api_hash(client, message: Message):
+            api_hash = message.text
+            await message.reply("Masukkan nomor telepon Anda:")
+
             @app.on_message(filters.text)
-            async def get_phone_number(client, msg):
-                phone_number = msg.text
+            async def get_phone_number(client, message: Message):
+                phone_number = message.text
                 try:
-                    # Proses login ke Telegram menggunakan API ID, API HASH, dan nomor telepon
-                    await client.send_code(phone_number, api_id=api_id, api_hash=api_hash)
-                    await msg.reply("📤 Kode verifikasi telah dikirim ke Telegram Anda. Silakan tunggu...")
-                    
-                    # Setelah verifikasi berhasil, simpan string session di MongoDB
-                    session_string = await client.export_session_string()
-                    collection.insert_one({"user_id": msg.from_user.id, "session_string": session_string})
-                    await msg.reply(f"📥 String session Anda:\n{session_string}")
-                    
-                    # Hapus string session dari database setelah dikirim
-                    collection.delete_one({"user_id": msg.from_user.id})
-                except PhoneNumberInvalid:
-                    await msg.reply("❌ Nomor telepon tidak valid. Silakan coba lagi.")
+                    # Menggunakan API_ID, API_HASH, dan nomor telepon untuk menghasilkan string session
+                    async with Client("my_bot_session", api_id=int(api_id), api_hash=api_hash) as userbot:
+                        await userbot.send_message(phone_number, "Testing connection...")
+                        session_string = userbot.export_session_string()
+                        await message.reply(f"String session Anda: `{session_string}`")
                 except Exception as e:
-                    await msg.reply(f"❌ Terjadi kesalahan: {e}")
+                    await message.reply(f"Terjadi kesalahan: {str(e)}")
 
-# Fungsi untuk memulai bot
-@app.on_message(filters.command("start"))
-async def start_handler(client, message):
-    await message.reply(
-        "Selamat datang! Gunakan perintah /getstring untuk mendapatkan string session Anda.\n"
-        "Gunakan /latensi untuk memeriksa ping dan uptime bot."
-    )
-
-# Jalankan bot
-app.run()
+if __name__ == "__main__":
+    app.run()
