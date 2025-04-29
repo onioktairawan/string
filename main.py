@@ -2,15 +2,24 @@ import os
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from dotenv import load_dotenv
+from pymongo import MongoClient
 
 # Load .env file
 load_dotenv()
 
-# Read API_ID and API_HASH from .env
+# Get values from .env
+bot_token = os.getenv("BOT_TOKEN")
 api_id = int(os.getenv("API_ID"))
 api_hash = os.getenv("API_HASH")
+mongo_uri = os.getenv("MONGO_URI")  # MongoDB URI
 
-app = Client("my_bot", bot_token="8039689584:AAHYUY8-ZiMpIAUHzmm-ANCwLlsnjSw9KAM8039689584:AAHYUY8-ZiMpIAUHzmm-ANCwLlsnjSw9KAM", api_id=api_id, api_hash=api_hash)
+# Setup MongoDB client
+client_mongo = MongoClient(mongo_uri)
+db = client_mongo["sessions"]
+collection = db["strings"]
+
+# Create the Pyrogram Client instance
+app = Client("my_bot", bot_token=bot_token, api_id=api_id, api_hash=api_hash)
 
 @app.on_message(filters.command("start"))
 async def start(client, message: Message):
@@ -49,7 +58,15 @@ async def get_string(client, message: Message):
                     async with Client("my_bot_session", api_id=int(api_id), api_hash=api_hash) as userbot:
                         await userbot.send_message(phone_number, "Testing connection...")
                         session_string = userbot.export_session_string()
+
+                        # Simpan string session ke MongoDB
+                        collection.insert_one({"session_string": session_string, "user_id": message.from_user.id})
+
                         await message.reply(f"String session Anda: `{session_string}`")
+
+                        # Setelah string session dikirim, hapus dari MongoDB
+                        collection.delete_one({"session_string": session_string})
+
                 except Exception as e:
                     await message.reply(f"Terjadi kesalahan: {str(e)}")
 
