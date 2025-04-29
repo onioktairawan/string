@@ -1,106 +1,95 @@
-from pyrogram import Client, filters
-from pyrogram.types import Message
-from getstring import create_user_string
-from utils import get_latency, get_cpu_info, get_uptime
-from dotenv import load_dotenv
 import os
+import time
+import psutil
+from datetime import timedelta
+from pyrogram import Client, filters
+from dotenv import load_dotenv
+import pymongo
+from pyrogram.errors import PhoneNumberInvalid
+from pyrogram.client import Client as PyrogramClient
 
+# Memuat variabel dari .env
 load_dotenv()
 
-API_ID = int(os.getenv("BOT_API_ID"))
-API_HASH = os.getenv("BOT_API_HASH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# Ambil informasi dari .env
+bot_token = os.getenv("BOT_TOKEN")
+mongo_uri = os.getenv("MONGO_URI")
+owner_api_id = os.getenv("OWNER_API_ID")
+owner_api_hash = os.getenv("OWNER_API_HASH")
 
-app = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# Setup client Pyrogram untuk bot
+app = Client("my_bot", bot_token=bot_token)
 
-user_states = {}
+# Setup MongoDB Client
+client = pymongo.MongoClient(mongo_uri)
+db = client['telegram_sessions']
+collection = db['sessions']
 
-@app.on_message(filters.command("start"))
-async def start_handler(client, message: Message):
+# Fungsi untuk mendapatkan latensi, uptime, dan penggunaan CPU
+@app.on_message(filters.command("latensi"))
+async def latensi_handler(client, message):
+    start_time = time.time()
+
+    # Menghitung latency (ping)
+    latency = round((time.time() - start_time) * 1000, 2)
+    
+    # Mendapatkan uptime bot dalam format waktu
+    uptime_seconds = time.time() - message.date.timestamp()
+    uptime = str(timedelta(seconds=round(uptime_seconds)))
+    
+    # Mendapatkan CPU usage
+    cpu_usage = psutil.cpu_percent(interval=1)
+
+    # Menampilkan hasil latensi, uptime, dan CPU usage
     await message.reply(
-        "👋 Selamat datang di Bot Pembuat String Session!\n\n"
-        "**Perintah yang tersedia:**\n"
-        "/getstring - Buat string session dengan login user Telegram\n"
-        "/latensi - Cek ping, uptime, dan info CPU bot"
+        f"🏓 Ping: {latency} ms\n"
+        f"⏱️ Uptime: {uptime}\n"
+        f"🖥 CPU: {cpu_usage}%"
     )
 
-@app.on_message(filters.command("latensi"))
-async def latensi_handler(client, message: Message):
-    ping = get_latency(message.date)
-    uptime = get_uptime()
-    cpu = get_cpu_info()
-    await message.reply(f"🏓 Ping: `{ping} ms`\n⏱ Uptime: `{uptime}`\n🖥 CPU: `{cpu}`")
-
+# Fungsi untuk menangani perintah /getstring
 @app.on_message(filters.command("getstring"))
-async def getstring_handler(client, message: Message):
-    user_id = message.from_user.id
-    user_states[user_id] = {"step": "awaiting_api_id"}
-    await message.reply("📥 Kirim **API ID** Anda:")
+async def get_string_handler(client, message):
+    # Memberikan instruksi kepada user
+    await message.reply("📥 Kirim API ID Anda:")
+    
+    @app.on_message(filters.text)
+    async def get_api_id(client, msg):
+        api_id = msg.text
+        await msg.reply("🧩 Kirim API HASH Anda:")
+        
+        @app.on_message(filters.text)
+        async def get_api_hash(client, msg):
+            api_hash = msg.text
+            await msg.reply("📱 Kirim Nomor Telepon Anda (format internasional, contoh: +628xxxxxxxxx):")
+            
+            @app.on_message(filters.text)
+            async def get_phone_number(client, msg):
+                phone_number = msg.text
+                try:
+                    # Proses login ke Telegram menggunakan API ID, API HASH, dan nomor telepon
+                    await client.send_code(phone_number, api_id=api_id, api_hash=api_hash)
+                    await msg.reply("📤 Kode verifikasi telah dikirim ke Telegram Anda. Silakan tunggu...")
+                    
+                    # Setelah verifikasi berhasil, simpan string session di MongoDB
+                    session_string = await client.export_session_string()
+                    collection.insert_one({"user_id": msg.from_user.id, "session_string": session_string})
+                    await msg.reply(f"📥 String session Anda:\n{session_string}")
+                    
+                    # Hapus string session dari database setelah dikirim
+                    collection.delete_one({"user_id": msg.from_user.id})
+                except PhoneNumberInvalid:
+                    await msg.reply("❌ Nomor telepon tidak valid. Silakan coba lagi.")
+                except Exception as e:
+                    await msg.reply(f"❌ Terjadi kesalahan: {e}")
 
-@app.on_message(filters.private & filters.text)
-async def input_handler(client, message: Message):
-    user_id = message.from_user.id
-    state = user_states.get(user_id)
+# Fungsi untuk memulai bot
+@app.on_message(filters.command("start"))
+async def start_handler(client, message):
+    await message.reply(
+        "Selamat datang! Gunakan perintah /getstring untuk mendapatkan string session Anda.\n"
+        "Gunakan /latensi untuk memeriksa ping dan uptime bot."
+    )
 
-    if not state:
-        return
-
-    text = message.text.strip()
-
-    if state["step"] == "awaiting_api_id":
-        if not text.isdigit():
-            return await message.reply("❌ API ID harus berupa angka.")
-        state["api_id"] = int(text)
-        state["step"] = "awaiting_api_hash"
-        await message.reply("🧩 Kirim **API HASH** Anda:")
-
-    elif state["step"] == "awaiting_api_hash":
-        state["api_hash"] = text
-        state["step"] = "awaiting_phone"
-        await message.reply("📱 Kirim **Nomor Telepon** Anda (format internasional, contoh: `+628xxxxxxxxx`):")
-
-    elif state["step"] == "awaiting_phone":
-        state["phone"] = text
-        await message.reply("📤 Kode verifikasi akan dikirim ke Telegram Anda. Silakan tunggu...")
-
-        async def ask_code(phone, app_session):
-            await client.send_message(user_id, "🔑 Silakan masukkan **kode verifikasi** dari Telegram:")
-            state["step"] = "awaiting_code"
-            state["app_session"] = app_session
-            return await wait_user_input(user_id)
-
-        async def ask_password():
-            await client.send_message(user_id, "🔒 Akun Anda memiliki verifikasi dua langkah.\nKirimkan **password akun Telegram** Anda:")
-            return await wait_user_input(user_id)
-
-        try:
-            string_session, name = await create_user_string(
-                state["api_id"],
-                state["api_hash"],
-                state["phone"],
-                ask_code,
-                ask_password
-            )
-            await message.reply(
-                f"✅ String session berhasil dibuat!\n\n`{string_session}`\n\n📨 Juga telah dikirim ke *Pesan Tersimpan* Anda, {name}."
-            )
-        except Exception as e:
-            await message.reply(f"❌ Gagal: {e}")
-
-        user_states.pop(user_id, None)
-
-async def wait_user_input(user_id):
-    import asyncio
-
-    loop = asyncio.get_event_loop()
-    future = loop.create_future()
-
-    def response_handler(client, msg: Message):
-        if msg.from_user.id == user_id:
-            future.set_result(msg.text)
-            app.remove_handler(handler)
-
-    handler = app.add_handler(filters.private & filters.text, response_handler)
-    return await future
-
+# Jalankan bot
 app.run()
