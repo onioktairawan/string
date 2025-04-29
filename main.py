@@ -1,7 +1,16 @@
+import os
 from pyrogram import Client, filters
 from pyrogram.types import Message
+from dotenv import load_dotenv
 
-app = Client("my_bot", bot_token="8039689584:AAHYUY8-ZiMpIAUHzmm-ANCwLlsnjSw9KAM")
+# Load .env file
+load_dotenv()
+
+# Read API_ID and API_HASH from .env
+api_id = int(os.getenv("API_ID"))
+api_hash = os.getenv("API_HASH")
+
+app = Client("my_bot", bot_token="8039689584:AAHYUY8-ZiMpIAUHzmm-ANCwLlsnjSw9KAM8039689584:AAHYUY8-ZiMpIAUHzmm-ANCwLlsnjSw9KAM", api_id=api_id, api_hash=api_hash)
 
 @app.on_message(filters.command("start"))
 async def start(client, message: Message):
