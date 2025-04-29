@@ -101,9 +101,6 @@ async def handle_steps(_, msg: Message):
                 "created_at": time.time()
             })
 
-            # Hapus setelah dikirim
-            col.delete_many({"user_id": user_id})
-
             await user_client.disconnect()
             del user_state[user_id]
 
