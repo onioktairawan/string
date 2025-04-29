@@ -1,95 +1,114 @@
 import os
+import time
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from dotenv import load_dotenv
 from pymongo import MongoClient
+from pyrogram.raw import functions
 
-# Load .env file
+from pyrogram.enums import ParseMode
+from pyrogram.errors import FloodWait
+from pyrogram import Client as UserClient
+
 load_dotenv()
 
-# Get values from .env
-bot_token = os.getenv("BOT_TOKEN")
-api_id = int(os.getenv("API_ID"))
-api_hash = os.getenv("API_HASH")
-mongo_uri = os.getenv("MONGO_URI")  # MongoDB URI
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+MONGO_URL = os.getenv("MONGO_URL")
 
-# Setup MongoDB client
-client_mongo = MongoClient(mongo_uri)
-db = client_mongo["sessions"]
-collection = db["strings"]
-
-# Create the Pyrogram Client instance for bot
 bot_app = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Dictionary to track user state
+client = MongoClient(MONGO_URL)
+db = client["string_bot"]
+col = db["sessions"]
+
 user_state = {}
 
 @bot_app.on_message(filters.command("start"))
-async def start(client, message: Message):
-    await message.reply(
-        "Halo! Saya bot yang dapat membantu Anda menghasilkan string session Pyrogram.\n"
-        "Gunakan /ping untuk melihat latensi bot, dan /getstring untuk menghasilkan string session Pyrogram."
-    )
+async def start(_, msg: Message):
+    await msg.reply("Halo! Kirim /getstring untuk mulai membuat string session.")
 
 @bot_app.on_message(filters.command("ping"))
-async def ping(client, message: Message):
-    import time
-    start_time = time.time()
-    await message.reply("Pong!")
-    ping_time = time.time() - start_time
-    await message.reply(f"Bot latency: {ping_time * 1000:.2f} ms")
+async def ping(_, msg: Message):
+    start = time.time()
+    m = await msg.reply("Pong!")
+    end = time.time()
+    ms = (end - start) * 1000
+    await m.edit(f"Bot latency: {ms:.2f} ms")
 
 @bot_app.on_message(filters.command("getstring"))
-async def get_string(client, message: Message):
-    # Track user state to manage steps
-    user_state[message.from_user.id] = {"step": 1}
-    await message.reply("Masukkan API_ID Anda:")
+async def get_string(_, msg: Message):
+    user_state[msg.from_user.id] = {"step": "api_id"}
+    await msg.reply("Masukkan API_ID Anda:")
 
-@bot_app.on_message(filters.text)
-async def handle_text(client, message: Message):
-    user_id = message.from_user.id
-    
-    if user_id in user_state:
-        state = user_state[user_id]
+@bot_app.on_message(filters.text & ~filters.command(["start", "ping", "getstring"]))
+async def handle_steps(_, msg: Message):
+    user_id = msg.from_user.id
+    if user_id not in user_state:
+        return
 
-        # Check the current step in the flow
-        if state["step"] == 1:
-            # Step 1: Get API_ID
-            user_state[user_id]["api_id"] = message.text
-            user_state[user_id]["step"] = 2
-            await message.reply("Masukkan API_HASH Anda:")
-        
-        elif state["step"] == 2:
-            # Step 2: Get API_HASH
-            user_state[user_id]["api_hash"] = message.text
-            user_state[user_id]["step"] = 3
-            await message.reply("Masukkan nomor telepon Anda:")
-        
-        elif state["step"] == 3:
-            # Step 3: Get Phone Number
-            phone_number = message.text
-            user_state[user_id]["phone_number"] = phone_number
+    state = user_state[user_id]
 
-            try:
-                # Now, using API_ID, API_HASH, and phone number to generate session string
-                async with Client("user_session", api_id=int(user_state[user_id]["api_id"]), api_hash=user_state[user_id]["api_hash"]) as userbot:
-                    # Sign in using phone number (this will automatically ask for the code if needed)
-                    await userbot.sign_in(phone_number)
-                    session_string = userbot.export_session_string()
+    if state["step"] == "api_id":
+        state["api_id"] = int(msg.text.strip())
+        state["step"] = "api_hash"
+        await msg.reply("Masukkan API_HASH Anda:")
 
-                    # Save session string to MongoDB
-                    collection.insert_one({"session_string": session_string, "user_id": user_id})
+    elif state["step"] == "api_hash":
+        state["api_hash"] = msg.text.strip()
+        state["step"] = "phone"
+        await msg.reply("Masukkan nomor telepon Anda:")
 
-                    await message.reply(f"String session Anda: `{session_string}`")
+    elif state["step"] == "phone":
+        phone = msg.text.strip()
+        api_id = state["api_id"]
+        api_hash = state["api_hash"]
 
-                    # After sending the session string, delete it from MongoDB
-                    collection.delete_one({"session_string": session_string})
+        await msg.reply("Sedang mengirim kode OTP ke Telegram Anda...")
 
-            except Exception as e:
-                await message.reply(f"Terjadi kesalahan: {str(e)}")
+        user_client = UserClient(name=str(user_id), api_id=api_id, api_hash=api_hash, in_memory=True)
 
-            # Clear the state after process is finished
+        try:
+            await user_client.connect()
+            sent = await user_client.send_code(phone)
+            state["phone_code_hash"] = sent.phone_code_hash
+            state["phone"] = phone
+            state["step"] = "code"
+            state["user_client"] = user_client
+            await msg.reply("Masukkan kode OTP yang dikirim ke Telegram Anda (cth: 12345):")
+        except Exception as e:
+            await msg.reply(f"Gagal mengirim kode OTP:\n`{e}`")
+            user_state.pop(user_id, None)
+
+    elif state["step"] == "code":
+        code = msg.text.strip()
+        user_client: UserClient = state["user_client"]
+        try:
+            await user_client.sign_in(
+                phone_number=state["phone"],
+                phone_code_hash=state["phone_code_hash"],
+                phone_code=code
+            )
+
+            string_session = await user_client.export_session_string()
+            await msg.reply(f"✅ Berhasil! Ini string Anda:\n\n`{string_session}`", parse_mode=ParseMode.MARKDOWN)
+
+            # Simpan ke MongoDB
+            col.insert_one({
+                "user_id": user_id,
+                "string": string_session,
+                "created_at": time.time()
+            })
+
+            # Hapus setelah dikirim
+            col.delete_many({"user_id": user_id})
+
+            await user_client.disconnect()
             del user_state[user_id]
 
-if __name__ == "__main__":
-    bot_app.run()
+        except Exception as e:
+            await msg.reply(f"Gagal login:\n`{e}`")
+            del user_state[user_id]
+
+bot_app.run()
