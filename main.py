@@ -6,7 +6,6 @@ from pyrogram import Client, filters
 from dotenv import load_dotenv
 import pymongo
 from pyrogram.errors import PhoneNumberInvalid
-from pyrogram.client import Client as PyrogramClient
 
 # Memuat variabel dari .env
 load_dotenv()
@@ -20,7 +19,7 @@ owner_api_hash = os.getenv("OWNER_API_HASH")
 # Setup client Pyrogram untuk bot
 app = Client("my_bot", bot_token=bot_token)
 
-# Setup MongoDB Client
+# Setup MongoDB Client (hanya sekali di awal)
 client = pymongo.MongoClient(mongo_uri)
 db = client['telegram_sessions']
 collection = db['sessions']
@@ -52,12 +51,12 @@ async def latensi_handler(client, message):
 async def get_string_handler(client, message):
     # Memberikan instruksi kepada user
     await message.reply("📥 Kirim API ID Anda:")
-    
+
     @app.on_message(filters.text)
     async def get_api_id(client, msg):
         api_id = msg.text
         await msg.reply("🧩 Kirim API HASH Anda:")
-        
+
         @app.on_message(filters.text)
         async def get_api_hash(client, msg):
             api_hash = msg.text
