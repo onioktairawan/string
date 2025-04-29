@@ -24,14 +24,14 @@ bot_app = Client("bot", bot_token=bot_token)
 # Dictionary to track user state
 user_state = {}
 
-@app.on_message(filters.command("start"))
+@bot_app.on_message(filters.command("start"))
 async def start(client, message: Message):
     await message.reply(
         "Halo! Saya bot yang dapat membantu Anda menghasilkan string session Pyrogram.\n"
         "Gunakan /ping untuk melihat latensi bot, dan /getstring untuk menghasilkan string session Pyrogram."
     )
 
-@app.on_message(filters.command("ping"))
+@bot_app.on_message(filters.command("ping"))
 async def ping(client, message: Message):
     import time
     start_time = time.time()
@@ -39,13 +39,13 @@ async def ping(client, message: Message):
     ping_time = time.time() - start_time
     await message.reply(f"Bot latency: {ping_time * 1000:.2f} ms")
 
-@app.on_message(filters.command("getstring"))
+@bot_app.on_message(filters.command("getstring"))
 async def get_string(client, message: Message):
     # Track user state to manage steps
     user_state[message.from_user.id] = {"step": 1}
     await message.reply("Masukkan API_ID Anda:")
 
-@app.on_message(filters.text)
+@bot_app.on_message(filters.text)
 async def handle_text(client, message: Message):
     user_id = message.from_user.id
     
