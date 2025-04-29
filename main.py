@@ -21,6 +21,9 @@ collection = db["strings"]
 # Create the Pyrogram Client instance
 app = Client("my_bot", bot_token=bot_token, api_id=api_id, api_hash=api_hash)
 
+# State to track the steps
+user_state = {}
+
 @app.on_message(filters.command("start"))
 async def start(client, message: Message):
     await message.reply(
@@ -38,37 +41,56 @@ async def ping(client, message: Message):
 
 @app.on_message(filters.command("getstring"))
 async def get_string(client, message: Message):
+    # Track user state to manage steps
+    user_state[message.from_user.id] = {"step": 1}
     await message.reply("Masukkan API_ID Anda:")
 
-    @app.on_message(filters.text)
-    async def get_api_id(client, message: Message):
-        api_id = message.text
-        await message.reply("Masukkan API_HASH Anda:")
+@app.on_message(filters.text)
+async def handle_text(client, message: Message):
+    user_id = message.from_user.id
+    
+    if user_id in user_state:
+        state = user_state[user_id]
 
-        @app.on_message(filters.text)
-        async def get_api_hash(client, message: Message):
+        # Check the current step in the flow
+        if state["step"] == 1:
+            # Step 1: Get API_ID
+            api_id = message.text
+            user_state[user_id]["api_id"] = api_id
+            user_state[user_id]["step"] = 2
+            await message.reply("Masukkan API_HASH Anda:")
+        
+        elif state["step"] == 2:
+            # Step 2: Get API_HASH
             api_hash = message.text
+            user_state[user_id]["api_hash"] = api_hash
+            user_state[user_id]["step"] = 3
             await message.reply("Masukkan nomor telepon Anda:")
+        
+        elif state["step"] == 3:
+            # Step 3: Get Phone Number
+            phone_number = message.text
+            user_state[user_id]["phone_number"] = phone_number
 
-            @app.on_message(filters.text)
-            async def get_phone_number(client, message: Message):
-                phone_number = message.text
-                try:
-                    # Menggunakan API_ID, API_HASH, dan nomor telepon untuk menghasilkan string session
-                    async with Client("my_bot_session", api_id=int(api_id), api_hash=api_hash) as userbot:
-                        await userbot.send_message(phone_number, "Testing connection...")
-                        session_string = userbot.export_session_string()
+            try:
+                # Menggunakan API_ID, API_HASH, dan nomor telepon untuk menghasilkan string session
+                async with Client("my_bot_session", api_id=int(user_state[user_id]["api_id"]), api_hash=user_state[user_id]["api_hash"]) as userbot:
+                    await userbot.send_message(phone_number, "Testing connection...")
+                    session_string = userbot.export_session_string()
 
-                        # Simpan string session ke MongoDB
-                        collection.insert_one({"session_string": session_string, "user_id": message.from_user.id})
+                    # Simpan string session ke MongoDB
+                    collection.insert_one({"session_string": session_string, "user_id": user_id})
 
-                        await message.reply(f"String session Anda: `{session_string}`")
+                    await message.reply(f"String session Anda: `{session_string}`")
 
-                        # Setelah string session dikirim, hapus dari MongoDB
-                        collection.delete_one({"session_string": session_string})
+                    # Setelah string session dikirim, hapus dari MongoDB
+                    collection.delete_one({"session_string": session_string})
 
-                except Exception as e:
-                    await message.reply(f"Terjadi kesalahan: {str(e)}")
+            except Exception as e:
+                await message.reply(f"Terjadi kesalahan: {str(e)}")
+
+            # Clear the state after process is finished
+            del user_state[user_id]
 
 if __name__ == "__main__":
     app.run()
