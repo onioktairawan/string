@@ -1,9 +1,9 @@
 from pyrogram import Client, filters
 from pyrogram.types import Message
+from getstring import create_user_string
 from utils import get_latency, get_cpu_info, get_uptime
-from getstring import create_string_session
 from dotenv import load_dotenv
-import asyncio, os
+import os
 
 load_dotenv()
 
@@ -16,26 +16,26 @@ app = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 user_states = {}
 
 @app.on_message(filters.command("start"))
-async def start(client, message: Message):
+async def start_handler(client, message: Message):
     await message.reply(
         "👋 Selamat datang di Bot Pembuat String Session!\n\n"
-        "**Perintah:**\n"
-        "/getstring - Untuk mendapatkan string session Pyrogram\n"
-        "/latensi - Untuk cek ping, uptime, dan CPU bot"
+        "**Perintah yang tersedia:**\n"
+        "/getstring - Buat string session dengan login user Telegram\n"
+        "/latensi - Cek ping, uptime, dan info CPU bot"
     )
 
 @app.on_message(filters.command("latensi"))
-async def latency(client, message: Message):
+async def latensi_handler(client, message: Message):
     ping = get_latency(message.date)
     uptime = get_uptime()
     cpu = get_cpu_info()
     await message.reply(f"🏓 Ping: `{ping} ms`\n⏱ Uptime: `{uptime}`\n🖥 CPU: `{cpu}`")
 
 @app.on_message(filters.command("getstring"))
-async def getstring(client, message: Message):
+async def getstring_handler(client, message: Message):
     user_id = message.from_user.id
     user_states[user_id] = {"step": "awaiting_api_id"}
-    await message.reply("🔐 Silakan kirim **API ID** Anda:")
+    await message.reply("📥 Kirim **API ID** Anda:")
 
 @app.on_message(filters.private & filters.text)
 async def input_handler(client, message: Message):
@@ -45,21 +45,62 @@ async def input_handler(client, message: Message):
     if not state:
         return
 
+    text = message.text.strip()
+
     if state["step"] == "awaiting_api_id":
-        if not message.text.isdigit():
+        if not text.isdigit():
             return await message.reply("❌ API ID harus berupa angka.")
-        state["api_id"] = int(message.text)
+        state["api_id"] = int(text)
         state["step"] = "awaiting_api_hash"
-        await message.reply("🧩 Sekarang kirim **API HASH** Anda:")
+        await message.reply("🧩 Kirim **API HASH** Anda:")
 
     elif state["step"] == "awaiting_api_hash":
-        state["api_hash"] = message.text.strip()
-        await message.reply("⏳ Membuat string session, tunggu sebentar...")
+        state["api_hash"] = text
+        state["step"] = "awaiting_phone"
+        await message.reply("📱 Kirim **Nomor Telepon** Anda (format internasional, contoh: `+628xxxxxxxxx`):")
+
+    elif state["step"] == "awaiting_phone":
+        state["phone"] = text
+        await message.reply("📤 Kode verifikasi akan dikirim ke Telegram Anda. Silakan tunggu...")
+
+        async def ask_code(phone, app_session):
+            await client.send_message(user_id, "🔑 Silakan masukkan **kode verifikasi** dari Telegram:")
+            state["step"] = "awaiting_code"
+            state["app_session"] = app_session
+            return await wait_user_input(user_id)
+
+        async def ask_password():
+            await client.send_message(user_id, "🔒 Akun Anda memiliki verifikasi dua langkah.\nKirimkan **password akun Telegram** Anda:")
+            return await wait_user_input(user_id)
+
         try:
-            string = await create_string_session(state["api_id"], state["api_hash"])
-            await message.reply(f"✅ Berhasil!\n\n`{string}`\n\n**Simpan baik-baik string session Anda.**")
+            string_session, name = await create_user_string(
+                state["api_id"],
+                state["api_hash"],
+                state["phone"],
+                ask_code,
+                ask_password
+            )
+            await message.reply(
+                f"✅ String session berhasil dibuat!\n\n`{string_session}`\n\n📨 Juga telah dikirim ke *Pesan Tersimpan* Anda, {name}."
+            )
         except Exception as e:
-            await message.reply(f"❌ Gagal membuat string session:\n{e}")
+            await message.reply(f"❌ Gagal: {e}")
+
         user_states.pop(user_id, None)
+
+async def wait_user_input(user_id):
+    import asyncio
+
+    loop = asyncio.get_event_loop()
+    future = loop.create_future()
+
+    def response_handler(client, msg: Message):
+        if msg.from_user.id == user_id:
+            future.set_result(msg.text)
+            app.remove_handler(handler)
+
+    handler = app.add_handler(filters.private & filters.text, response_handler)
+    return await future
 
 app.run()
