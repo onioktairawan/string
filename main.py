@@ -1,7 +1,7 @@
 from pyrogram import Client, filters
 from pyrogram.types import Message
 
-app = Client("my_bot", bot_token="7768837888:AAFp9J3EwuaNL_c7MRXAzbFWdI2uYyM1Mhw")
+app = Client("my_bot", bot_token="8039689584:AAHYUY8-ZiMpIAUHzmm-ANCwLlsnjSw9KAM")
 
 @app.on_message(filters.command("start"))
 async def start(client, message: Message):
