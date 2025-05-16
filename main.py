@@ -76,7 +76,7 @@ async def handle_steps(_, msg: Message):
             state["phone"] = phone
             state["step"] = "code"
             state["user_client"] = user_client
-            await msg.reply("Masukkan kode OTP yang dikirim ke Telegram Anda pakai spasi(cth: 1 2 3 4 5):")
+            await msg.reply("Masukkan kode OTP yang dikirim ke Telegram Anda (cth: 12345):")
         except Exception as e:
             await msg.reply(f"Gagal mengirim kode OTP:\n`{e}`")
             user_state.pop(user_id, None)
