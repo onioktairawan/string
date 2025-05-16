@@ -82,7 +82,7 @@ async def handle_steps(_, msg: Message):
             user_state.pop(user_id, None)
 
     elif state["step"] == "code":
-        code = msg.text.replace(" ", "").strip()
+        code = msg.text.strip()
         user_client: UserClient = state["user_client"]
         try:
             await user_client.sign_in(
