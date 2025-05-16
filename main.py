@@ -46,7 +46,7 @@ async def ping(event):
 async def getstring_start(event):
     user_id = event.sender_id
     user_state[user_id] = {"step": "phone"}
-    await event.reply("Masukkan nomor telepon Anda :")
+    await event.reply("Masukkan nomor telepon Anda (contoh: +628123456789):")
 
 @bot.on(events.NewMessage)
 async def handle_messages(event):
@@ -54,15 +54,24 @@ async def handle_messages(event):
     if user_id not in user_state:
         return
 
+    if not event.text:
+        # Abaikan pesan tanpa teks
+        return
+
     state = user_state[user_id]
     text = event.text.strip()
 
     if state["step"] == "phone":
         phone = text
+        if not phone.startswith("+") or len(phone) < 5 or not phone[1:].isdigit():
+            await event.reply("Nomor telepon tidak valid. Harus dimulai dengan + dan hanya angka. Coba lagi:")
+            return
+
         user_state[user_id]["phone"] = phone
         user_state[user_id]["step"] = "code"
         user_state[user_id]["client"] = TelegramClient(StringSession(), API_ID, API_HASH)
         client = user_state[user_id]["client"]
+
         await client.connect()
         try:
             sent = await client.send_code_request(phone)
@@ -85,8 +94,7 @@ async def handle_messages(event):
                 user_state[user_id]["step"] = "password"
                 return
 
-            string_sess = await client.session.save()
-            # Simpan ke MongoDB
+            string_sess = client.session.save()  # sinkron method
             sessions_col.insert_one({
                 "user_id": user_id,
                 "string": string_sess,
@@ -109,7 +117,7 @@ async def handle_messages(event):
         client = state["client"]
         try:
             await client.sign_in(password=password)
-            string_sess = await client.session.save()
+            string_sess = client.session.save()
             sessions_col.insert_one({
                 "user_id": user_id,
                 "string": string_sess,
