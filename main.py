@@ -46,7 +46,7 @@ async def ping(event):
 async def getstring_start(event):
     user_id = event.sender_id
     user_state[user_id] = {"step": "phone"}
-    await event.reply("Masukkan nomor telepon Anda (contoh: +6281234567890):")
+    await event.reply("Masukkan nomor telepon Anda :")
 
 @bot.on(events.NewMessage)
 async def handle_messages(event):
@@ -67,7 +67,7 @@ async def handle_messages(event):
         try:
             sent = await client.send_code_request(phone)
             user_state[user_id]["phone_code_hash"] = sent.phone_code_hash
-            await event.reply("Kode OTP sudah dikirim ke Telegram Anda.\nKirim kode OTP (boleh dengan spasi, misal: 1 2 3 4 5):")
+            await event.reply("Kode OTP sudah dikirim ke Telegram Anda.\nKirim kode OTP (dengan spasi, misal: 1 2 3 4 5):")
         except Exception as e:
             await event.reply(f"Gagal mengirim kode OTP:\n{e}")
             await client.disconnect()
